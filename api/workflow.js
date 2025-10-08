@@ -46,17 +46,14 @@ export default async function handler(req, res) {
     let workflowParameters = {};
     
     if (userParams.input !== undefined) {
-      // 如果传入了 input，直接使用
       workflowParameters = userParams;
     } else if (userParams.input_text !== undefined) {
-      // 如果传入的是 input_text，映射到 input
       workflowParameters.input = userParams.input_text;
     } else if (userParams.message !== undefined) {
       workflowParameters.input = userParams.message;
     } else if (userParams.text !== undefined) {
       workflowParameters.input = userParams.text;
     } else {
-      // 使用所有传入的参数
       workflowParameters = userParams;
     }
     
@@ -89,9 +86,23 @@ export default async function handler(req, res) {
     
     console.log('✅ 工作流执行成功');
     
+    // 🎯 新增：尝试解析并提取实际的工作流输出
+    let workflowOutput = result;
+    
+    // 如果返回的 data.data 是字符串格式的 JSON，尝试解析
+    if (result.data && typeof result.data === 'string') {
+      try {
+        const parsed = JSON.parse(result.data);
+        workflowOutput = parsed;
+      } catch (e) {
+        // 解析失败，使用原始数据
+      }
+    }
+    
     return res.status(200).json({
       success: true,
-      data: result,
+      data: result,                    // 完整的原始响应
+      output: workflowOutput,          // 解析后的输出
       timestamp: new Date().toISOString()
     });
     
