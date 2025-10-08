@@ -35,8 +35,8 @@ export default async function handler(req, res) {
 
   try {
     // 🔑 从环境变量读取配置（推荐）或使用默认值
-    const COZE_TOKEN = process.env.COZE_TOKEN || 'cztei_lnM5KO9RhqOLActpRAeIEdPnxAQf4baBl3Pn0ZOtLF3vgJ1dQItGG6B07A8e5Cpkc';
-    const WORKFLOW_ID = process.env.WORKFLOW_ID || '7555064552041365523';
+    const COZE_TOKEN = process.env.COZE_TOKEN;
+    const WORKFLOW_ID = process.env.WORKFLOW_ID;
     
     // 获取用户传入的参数
     const userParameters = req.body || {};
