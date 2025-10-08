@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/workflow.js", // <-- 确保是这个精确路径
+      "src": "api/workflow.js",
       "use": "@vercel/node"
     }
   ]
