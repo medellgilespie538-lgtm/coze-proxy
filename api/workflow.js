@@ -1,6 +1,4 @@
 // api/workflow.js
-// 这是完整的文件，直接复制使用
-
 export default async function handler(req, res) {
   // 允许跨域访问
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -34,17 +32,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🔑 从环境变量读取配置（推荐）或使用默认值
-    const COZE_TOKEN = process.env.COZE_TOKEN;
-    const WORKFLOW_ID = process.env.WORKFLOW_ID;
+    // 🔑 优先从请求体获取配置，其次从环境变量
+    const requestBody = req.body || {};
     
-    // 获取用户传入的参数
-    const userParameters = req.body || {};
+    const COZE_TOKEN = requestBody.coze_token 
+      || process.env.COZE_TOKEN;
     
-    console.log('📥 收到工作流请求, 参数:', userParameters);
+    const WORKFLOW_ID = requestBody.workflow_id 
+      || process.env.WORKFLOW_ID;
+    
+    // 检查必需参数
+    if (!COZE_TOKEN || !WORKFLOW_ID) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需参数',
+        message: '请在请求体中传入 coze_token 和 workflow_id，或在环境变量中配置',
+        required: {
+          coze_token: '扣子API Token',
+          workflow_id: '工作流ID'
+        }
+      });
+    }
+    
+    // 提取工作流参数（排除配置参数）
+    const { coze_token, workflow_id, ...workflowParameters } = requestBody;
+    
+    console.log('📥 收到工作流请求');
+    console.log('📋 工作流ID:', WORKFLOW_ID);
+    console.log('📦 参数:', workflowParameters);
     
     // 调用国内扣子工作流API
-    const response = await fetch('https://api.coze.cn/v1/workflow/runs/create', {
+    const response = await fetch('https://api.coze.cn/v1/workflow/run', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${COZE_TOKEN}`,
@@ -52,18 +70,22 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         workflow_id: WORKFLOW_ID,
-        parameters: userParameters
+        parameters: workflowParameters
       })
     });
     
+    const result = await response.json();
+    
     // 检查响应状态
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ 扣子API错误:', response.status, errorText);
-      throw new Error(`扣子API返回错误: ${response.status} - ${errorText}`);
+      console.error('❌ 扣子API错误:', response.status, result);
+      return res.status(response.status).json({
+        success: false,
+        error: '调用扣子工作流失败',
+        details: result,
+        statusCode: response.status
+      });
     }
-    
-    const result = await response.json();
     
     console.log('✅ 工作流执行成功');
     
