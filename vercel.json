@@ -5,5 +5,11 @@
       "src": "api/workflow.js",
       "use": "@vercel/node"
     }
+  ],
+  "routes": [
+    {
+      "src": "/api/workflow",
+      "dest": "/api/workflow.js"
+    }
   ]
 }
