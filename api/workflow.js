@@ -1,16 +1,13 @@
 // api/workflow.js
 export default async function handler(req, res) {
-  // 允许跨域访问
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
-  // 处理预检请求
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // GET请求返回服务状态
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'ok',
@@ -23,7 +20,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // 只接受POST请求
   if (req.method !== 'POST') {
     return res.status(405).json({ 
       error: '只支持POST和GET请求',
@@ -32,16 +28,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🔑 优先从请求体获取配置，其次从环境变量
     const requestBody = req.body || {};
     
-    const COZE_TOKEN = requestBody.coze_token 
-      || process.env.COZE_TOKEN;
+    const COZE_TOKEN = requestBody.coze_token || process.env.COZE_TOKEN;
+    const WORKFLOW_ID = requestBody.workflow_id || process.env.WORKFLOW_ID;
     
-    const WORKFLOW_ID = requestBody.workflow_id 
-      || process.env.WORKFLOW_ID;
-    
-    // 检查必需参数
     if (!COZE_TOKEN || !WORKFLOW_ID) {
       return res.status(400).json({
         success: false,
@@ -54,12 +45,9 @@ export default async function handler(req, res) {
       });
     }
     
-    // 提取工作流参数（排除配置参数）
     const { coze_token, workflow_id, ...workflowParameters } = requestBody;
     
     console.log('📥 收到工作流请求');
-    console.log('📋 工作流ID:', WORKFLOW_ID);
-    console.log('📦 参数:', workflowParameters);
     
     // 调用国内扣子工作流API
     const response = await fetch('https://api.coze.cn/v1/workflow/run', {
@@ -76,7 +64,6 @@ export default async function handler(req, res) {
     
     const result = await response.json();
     
-    // 检查响应状态
     if (!response.ok) {
       console.error('❌ 扣子API错误:', response.status, result);
       return res.status(response.status).json({
@@ -89,7 +76,6 @@ export default async function handler(req, res) {
     
     console.log('✅ 工作流执行成功');
     
-    // 返回结果
     return res.status(200).json({
       success: true,
       data: result,
