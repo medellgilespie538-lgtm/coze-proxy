@@ -36,45 +36,33 @@ export default async function handler(req, res) {
     if (!COZE_TOKEN || !WORKFLOW_ID) {
       return res.status(400).json({
         success: false,
-        error: '缺少必需参数',
-        message: '请在请求体中传入 coze_token 和 workflow_id，或在环境变量中配置'
+        error: '缺少必需参数'
       });
     }
     
-    // 提取配置参数
     const { coze_token, workflow_id, ...userParams } = requestBody;
     
-    // 🎯 智能参数处理：支持多种输入格式
+    // 智能参数映射
     let workflowParameters = {};
     
-    // 如果用户直接传入了工作流需要的参数（如 String1），直接使用
-    if (userParams.String1 !== undefined) {
+    if (userParams.input !== undefined) {
+      // 如果传入了 input，直接使用
       workflowParameters = userParams;
-    }
-    // 如果用户传入的是 input 或 input_text，映射到 String1
-    else if (userParams.input !== undefined) {
-      workflowParameters.String1 = userParams.input;
-    }
-    else if (userParams.input_text !== undefined) {
-      workflowParameters.String1 = userParams.input_text;
-    }
-    // 如果用户传入的是 message 或 text
-    else if (userParams.message !== undefined) {
-      workflowParameters.String1 = userParams.message;
-    }
-    else if (userParams.text !== undefined) {
-      workflowParameters.String1 = userParams.text;
-    }
-    // 否则使用所有传入的参数
-    else {
+    } else if (userParams.input_text !== undefined) {
+      // 如果传入的是 input_text，映射到 input
+      workflowParameters.input = userParams.input_text;
+    } else if (userParams.message !== undefined) {
+      workflowParameters.input = userParams.message;
+    } else if (userParams.text !== undefined) {
+      workflowParameters.input = userParams.text;
+    } else {
+      // 使用所有传入的参数
       workflowParameters = userParams;
     }
     
     console.log('📥 收到工作流请求');
-    console.log('📦 原始参数:', userParams);
-    console.log('🔄 转换后参数:', workflowParameters);
+    console.log('📦 处理后的参数:', workflowParameters);
     
-    // 调用国内扣子工作流API
     const response = await fetch('https://api.coze.cn/v1/workflow/run', {
       method: 'POST',
       headers: {
