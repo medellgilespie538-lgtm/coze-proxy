@@ -12,18 +12,16 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: 'ok',
       message: 'Coze工作流代理服务运行中 ✅',
-      usage: 'POST请求到此地址，body中传入工作流参数',
-      endpoints: {
-        health: 'GET /api/workflow',
-        execute: 'POST /api/workflow'
+      usage: 'POST请求到此地址，直接传入工作流参数',
+      example: {
+        input: "你的输入内容"
       }
     });
   }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ 
-      error: '只支持POST和GET请求',
-      currentMethod: req.method 
+      error: '只支持POST和GET请求'
     });
   }
 
@@ -35,31 +33,21 @@ export default async function handler(req, res) {
     
     if (!COZE_TOKEN || !WORKFLOW_ID) {
       return res.status(400).json({
-        success: false,
-        error: '缺少必需参数'
+        error: '缺少必需参数: coze_token 或 workflow_id'
       });
     }
     
-    const { coze_token, workflow_id, ...userParams } = requestBody;
+    // 移除配置参数，剩下的就是工作流参数
+    const { coze_token, workflow_id, ...workflowParams } = requestBody;
     
-    // 智能参数映射
-    let workflowParameters = {};
+    // 🎯 如果没有传入任何参数，使用默认的 input 字段
+    const parameters = Object.keys(workflowParams).length > 0 
+      ? workflowParams 
+      : { input: "" };
     
-    if (userParams.input !== undefined) {
-      workflowParameters = userParams;
-    } else if (userParams.input_text !== undefined) {
-      workflowParameters.input = userParams.input_text;
-    } else if (userParams.message !== undefined) {
-      workflowParameters.input = userParams.message;
-    } else if (userParams.text !== undefined) {
-      workflowParameters.input = userParams.text;
-    } else {
-      workflowParameters = userParams;
-    }
+    console.log('📥 收到工作流请求，参数:', parameters);
     
-    console.log('📥 收到工作流请求');
-    console.log('📦 处理后的参数:', workflowParameters);
-    
+    // 调用 Coze API
     const response = await fetch('https://api.coze.cn/v1/workflow/run', {
       method: 'POST',
       headers: {
@@ -68,51 +56,60 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         workflow_id: WORKFLOW_ID,
-        parameters: workflowParameters
+        parameters: parameters
       })
     });
     
     const result = await response.json();
     
     if (!response.ok) {
-      console.error('❌ 扣子API错误:', response.status, result);
+      console.error('❌ Coze API错误:', response.status, result);
       return res.status(response.status).json({
-        success: false,
-        error: '调用扣子工作流失败',
-        details: result,
-        statusCode: response.status
+        error: 'Coze工作流执行失败',
+        details: result
       });
     }
     
     console.log('✅ 工作流执行成功');
     
-    // 🎯 新增：尝试解析并提取实际的工作流输出
-    let workflowOutput = result;
+    // 🎯 智能提取输出内容
+    let output = null;
     
-    // 如果返回的 data.data 是字符串格式的 JSON，尝试解析
-    if (result.data && typeof result.data === 'string') {
-      try {
-        const parsed = JSON.parse(result.data);
-        workflowOutput = parsed;
-      } catch (e) {
-        // 解析失败，使用原始数据
+    try {
+      // 尝试解析 result.data
+      if (result.data) {
+        if (typeof result.data === 'string') {
+          // 如果是字符串，尝试解析 JSON
+          try {
+            output = JSON.parse(result.data);
+          } catch {
+            // 解析失败，直接返回字符串
+            output = result.data;
+          }
+        } else {
+          // 如果已经是对象，直接使用
+          output = result.data;
+        }
       }
+      
+      // 如果 output 是对象且只有一个 output 字段，直接提取
+      if (output && typeof output === 'object' && Object.keys(output).length === 1 && output.output) {
+        output = output.output;
+      }
+      
+    } catch (error) {
+      console.error('⚠️ 输出解析出错，返回原始数据:', error);
+      output = result;
     }
     
-    return res.status(200).json({
-      success: true,
-      data: result,                    // 完整的原始响应
-      output: workflowOutput,          // 解析后的输出
-      timestamp: new Date().toISOString()
-    });
+    // 🎯 返回简化的响应格式
+    return res.status(200).json(output || result);
     
   } catch (error) {
     console.error('💥 执行出错:', error.message);
     
     return res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
+      error: error.message
     });
   }
 }
