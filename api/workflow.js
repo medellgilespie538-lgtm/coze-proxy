@@ -12,10 +12,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: 'ok',
       message: 'Coze工作流代理服务运行中 ✅',
-      usage: 'POST请求到此地址，直接传入工作流参数',
-      example: {
-        input: "你的输入内容"
-      }
+      usage: '支持 POST Body 或 URL 参数两种方式传参'
     });
   }
 
@@ -26,10 +23,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const requestBody = req.body || {};
+    // 🎯 同时支持 Request body (JSON) 和 Request parameter (URL参数)
+    const bodyParams = req.body || {};
+    const queryParams = req.query || {};
     
-    const COZE_TOKEN = requestBody.coze_token || process.env.COZE_TOKEN;
-    const WORKFLOW_ID = requestBody.workflow_id || process.env.WORKFLOW_ID;
+    // 合并两种参数来源，URL参数优先级更高
+    const allParams = { ...bodyParams, ...queryParams };
+    
+    const COZE_TOKEN = allParams.coze_token || process.env.COZE_TOKEN;
+    const WORKFLOW_ID = allParams.workflow_id || process.env.WORKFLOW_ID;
     
     if (!COZE_TOKEN || !WORKFLOW_ID) {
       return res.status(400).json({
@@ -38,14 +40,11 @@ export default async function handler(req, res) {
     }
     
     // 移除配置参数，剩下的就是工作流参数
-    const { coze_token, workflow_id, ...workflowParams } = requestBody;
+    const { coze_token, workflow_id, ...workflowParams } = allParams;
     
-    // 🎯 如果没有传入任何参数，使用默认的 input 字段
-    const parameters = Object.keys(workflowParams).length > 0 
-      ? workflowParams 
-      : { input: "" };
-    
-    console.log('📥 收到工作流请求，参数:', parameters);
+    console.log('📥 收到工作流请求');
+    console.log('📦 参数来源: Body +', Object.keys(queryParams).length, '个URL参数');
+    console.log('📦 工作流参数:', workflowParams);
     
     // 调用 Coze API
     const response = await fetch('https://api.coze.cn/v1/workflow/run', {
@@ -56,7 +55,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         workflow_id: WORKFLOW_ID,
-        parameters: parameters
+        parameters: workflowParams
       })
     });
     
@@ -76,18 +75,14 @@ export default async function handler(req, res) {
     let output = null;
     
     try {
-      // 尝试解析 result.data
       if (result.data) {
         if (typeof result.data === 'string') {
-          // 如果是字符串，尝试解析 JSON
           try {
             output = JSON.parse(result.data);
           } catch {
-            // 解析失败，直接返回字符串
             output = result.data;
           }
         } else {
-          // 如果已经是对象，直接使用
           output = result.data;
         }
       }
