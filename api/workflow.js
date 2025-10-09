@@ -71,10 +71,11 @@ export default async function handler(req, res) {
     
     console.log('✅ 工作流执行成功');
     
-    // 🎯 智能提取输出内容
+    // 🎯 智能提取输出内容 - 多层解析
     let output = null;
     
     try {
+      // 第一层：解析 result.data
       if (result.data) {
         if (typeof result.data === 'string') {
           try {
@@ -87,7 +88,23 @@ export default async function handler(req, res) {
         }
       }
       
-      // 如果 output 是对象且只有一个 output 字段，直接提取
+      // 第二层：如果是 {body, statusCode, headers} 格式，提取 body
+      if (output && typeof output === 'object' && output.body !== undefined) {
+        console.log('📦 检测到包装格式，提取 body');
+        
+        // body 可能是字符串形式的 JSON，尝试解析
+        if (typeof output.body === 'string') {
+          try {
+            output = JSON.parse(output.body);
+          } catch {
+            output = output.body;
+          }
+        } else {
+          output = output.body;
+        }
+      }
+      
+      // 第三层：如果只有一个 output 字段，直接提取
       if (output && typeof output === 'object' && Object.keys(output).length === 1 && output.output) {
         output = output.output;
       }
