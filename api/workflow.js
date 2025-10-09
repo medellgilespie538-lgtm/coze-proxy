@@ -61,6 +61,9 @@ export default async function handler(req, res) {
     
     const result = await response.json();
     
+    // 🔍 详细日志：查看原始返回
+    console.log('📦 Coze API 原始返回:', JSON.stringify(result, null, 2));
+    
     if (!response.ok) {
       console.error('❌ Coze API错误:', response.status, result);
       return res.status(response.status).json({
@@ -71,48 +74,54 @@ export default async function handler(req, res) {
     
     console.log('✅ 工作流执行成功');
     
-    // 🎯 智能提取输出内容 - 多层解析
-    let output = null;
+    // 🎯 多层智能解析
+    let output = result;
     
     try {
-      // 第一层：解析 result.data
-      if (result.data) {
-        if (typeof result.data === 'string') {
-          try {
-            output = JSON.parse(result.data);
-          } catch {
-            output = result.data;
-          }
-        } else {
-          output = result.data;
+      // 第一层：提取 result.data
+      if (result.data !== undefined) {
+        output = result.data;
+        console.log('📦 提取 data 字段');
+      }
+      
+      // 第二层：如果是字符串 JSON，解析它
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+          console.log('📦 解析字符串 JSON');
+        } catch (e) {
+          // 不是 JSON，保持原样
         }
       }
       
-      // 第二层：如果是 {body, statusCode, headers} 格式，提取 body
-      if (output && typeof output === 'object' && output.body !== undefined) {
-        console.log('📦 检测到包装格式，提取 body');
+      // 第三层：如果是 {body, statusCode, headers}，提取 body
+      if (output && typeof output === 'object' && 'body' in output && 'statusCode' in output) {
+        console.log('📦 检测到 HTTP 响应格式，提取 body');
+        output = output.body;
         
-        // body 可能是字符串形式的 JSON，尝试解析
-        if (typeof output.body === 'string') {
+        // body 可能也是字符串 JSON
+        if (typeof output === 'string') {
           try {
-            output = JSON.parse(output.body);
-          } catch {
-            output = output.body;
+            output = JSON.parse(output);
+            console.log('📦 解析 body 中的 JSON');
+          } catch (e) {
+            // 不是 JSON，保持原样
           }
-        } else {
-          output = output.body;
         }
       }
       
-      // 第三层：如果只有一个 output 字段，直接提取
-      if (output && typeof output === 'object' && Object.keys(output).length === 1 && output.output) {
+      // 第四层：如果只有一个 output 字段，提取它
+      if (output && typeof output === 'object' && Object.keys(output).length === 1 && 'output' in output) {
+        console.log('📦 提取单一 output 字段');
         output = output.output;
       }
       
     } catch (error) {
-      console.error('⚠️ 输出解析出错，返回原始数据:', error);
+      console.error('⚠️ 解析出错:', error);
       output = result;
     }
+    
+    console.log('✨ 最终输出:', typeof output === 'string' ? output : JSON.stringify(output, null, 2));
     
     // 🎯 返回简化的响应格式
     return res.status(200).json(output || result);
