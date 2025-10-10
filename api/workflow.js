@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: 'ok',
       message: 'Coze工作流代理服务运行中 ✅',
-      version: '1.0.0',
+      version: '1.0.1',
       usage: {
         health_check: 'GET /api/workflow',
         execute_workflow: 'POST /api/workflow'
@@ -213,11 +213,33 @@ export default async function handler(req, res) {
       // 🎯 处理异步模式的响应
       if (isAsync) {
         // 异步模式：返回 execute_id 供后续查询
+        // 扣子API异步响应格式: { data: "execute_id_string" } 或 { data: { execute_id: "..." } }
+        let executeId = null;
+        
+        if (result.data) {
+          if (typeof result.data === 'string') {
+            executeId = result.data;
+          } else if (result.data.execute_id) {
+            executeId = result.data.execute_id;
+          } else if (typeof result.data === 'object') {
+            // 如果data是对象但没有execute_id字段，尝试查找其他可能的ID字段
+            executeId = result.data.id || result.data.execution_id || result.data.task_id;
+          }
+        }
+        
+        // 如果还是没找到，检查result的顶层
+        if (!executeId && result.execute_id) {
+          executeId = result.execute_id;
+        }
+        
         return res.status(200).json({
           success: true,
           mode: 'async',
-          execute_id: result.data,
-          message: '工作流已提交，请使用 execute_id 查询结果',
+          execute_id: executeId,
+          raw_response: result,  // 包含完整响应用于调试
+          message: executeId 
+            ? '工作流已提交，请使用 execute_id 查询结果' 
+            : '工作流已提交，但未获取到 execute_id（请查看 raw_response）',
           timestamp: new Date().toISOString()
         });
       }
@@ -270,3 +292,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
