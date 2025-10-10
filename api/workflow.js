@@ -39,8 +39,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 获取请求体
-    const requestBody = req.body || {};
+    // 确保req.body正确解析
+    let requestBody = req.body || {};
+    
+    if (typeof requestBody === 'string') {
+      try {
+        requestBody = JSON.parse(requestBody);
+      } catch (e) {
+        console.error('⚠️ 无法解析请求体为JSON:', e.message);
+        return res.status(400).json({
+          success: false,
+          error: '请求体格式不正确，无法解析为JSON',
+          details: e.message
+        });
+      }
+    }
+
+    console.log('📄 原始请求体:', JSON.stringify(requestBody, null, 2));
     
     // 🎯 优先级: 请求参数 > 环境变量 > 硬编码默认值
     const COZE_TOKEN = requestBody.coze_token 
@@ -52,11 +67,20 @@ export default async function handler(req, res) {
       || '7559227203788587047';
     
     // 验证必需参数
-    if (!COZE_TOKEN || !WORKFLOW_ID) {
-      console.error('❌ 缺少必需参数');
+    if (!COZE_TOKEN) {
+      console.error('❌ 缺少必需参数: COZE_TOKEN');
       return res.status(400).json({
         success: false,
-        error: '缺少必需参数: coze_token 或 workflow_id',
+        error: '缺少必需参数: coze_token',
+        hint: '请在请求body中传入，或在Vercel环境变量中配置'
+      });
+    }
+
+    if (!WORKFLOW_ID) {
+      console.error('❌ 缺少必需参数: WORKFLOW_ID');
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需参数: workflow_id',
         hint: '请在请求body中传入，或在Vercel环境变量中配置'
       });
     }
@@ -69,7 +93,7 @@ export default async function handler(req, res) {
     
     if (userParams.input !== undefined) {
       // 如果有 input 字段，直接使用
-      workflowParameters = userParams;
+      workflowParameters.input = userParams.input;
     } else if (userParams.input_text !== undefined) {
       // 如果是 input_text，映射为 input
       workflowParameters.input = userParams.input_text;
@@ -79,13 +103,32 @@ export default async function handler(req, res) {
     } else if (userParams.text !== undefined) {
       // 如果是 text，映射为 input
       workflowParameters.input = userParams.text;
-    } else {
+    } else if (Object.keys(userParams).length > 0) {
       // 否则使用所有剩余参数
       workflowParameters = userParams;
+    } else {
+      // 如果没有找到任何输入参数
+      console.error('❌ 缺少工作流输入参数');
+      return res.status(400).json({
+        success: false,
+        error: '缺少工作流输入参数',
+        hint: '请提供至少一个输入参数，如input, input_text, message或text',
+        received: requestBody
+      });
+    }
+
+    // 验证workflowParameters不能为空
+    if (Object.keys(workflowParameters).length === 0) {
+      console.error('❌ 工作流参数不能为空');
+      return res.status(400).json({
+        success: false,
+        error: '工作流参数不能为空',
+        receivedBody: requestBody
+      });
     }
     
     console.log('📥 收到工作流请求');
-    console.log('🔑 Token:', COZE_TOKEN.substring(0, 20) + '...');
+    console.log('🔑 Token:', COZE_TOKEN.substring(0, 10) + '...');
     console.log('🆔 Workflow ID:', WORKFLOW_ID);
     console.log('📦 处理后的参数:', JSON.stringify(workflowParameters, null, 2));
     
@@ -115,75 +158,113 @@ export default async function handler(req, res) {
     console.log('🚀 发送到扣子API:', JSON.stringify(requestPayload, null, 2));
     
     // 调用扣子API
-    const response = await fetch('https://api.coze.cn/v1/workflow/run', {
+    const cozeApiUrl = 'https://api.coze.cn/v1/workflow/run';
+    console.log(`🔗 请求API: ${cozeApiUrl}`);
+    
+    const fetchOptions = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${COZE_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestPayload)
-    });
+    };
     
-    // 解析响应
-    const result = await response.json();
-    
-    // 检查API调用是否成功
-    if (!response.ok) {
-      console.error('❌ 扣子API错误:', response.status, JSON.stringify(result, null, 2));
-      return res.status(response.status).json({
-        success: false,
-        error: '调用扣子工作流失败',
-        details: result,
-        statusCode: response.status
+    try {
+      const response = await fetch(cozeApiUrl, fetchOptions);
+      console.log(`🔄 响应状态码: ${response.status}`);
+      
+      // 获取响应头信息并记录
+      const responseHeaders = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
       });
-    }
-    
-    console.log('✅ 工作流执行成功');
-    console.log('📤 原始响应:', JSON.stringify(result, null, 2));
-    
-    // 🎯 处理异步模式的响应
-    if (isAsync) {
-      // 异步模式：返回 execute_id 供后续查询
+      console.log('📋 响应头:', JSON.stringify(responseHeaders, null, 2));
+      
+      // 尝试解析响应体
+      let result;
+      try {
+        result = await response.json();
+        console.log('📄 响应体:', JSON.stringify(result, null, 2));
+      } catch (jsonError) {
+        const textResponse = await response.text();
+        console.error('⚠️ 无法解析响应为JSON:', textResponse);
+        return res.status(500).json({
+          success: false,
+          error: '无法解析Coze API响应',
+          responseText: textResponse,
+          statusCode: response.status
+        });
+      }
+      
+      // 检查API调用是否成功
+      if (!response.ok) {
+        console.error('❌ 扣子API错误:', response.status, JSON.stringify(result, null, 2));
+        return res.status(response.status).json({
+          success: false,
+          error: '调用扣子工作流失败',
+          details: result,
+          statusCode: response.status
+        });
+      }
+      
+      console.log('✅ 工作流执行成功');
+      
+      // 🎯 处理异步模式的响应
+      if (isAsync) {
+        // 异步模式：返回 execute_id 供后续查询
+        return res.status(200).json({
+          success: true,
+          mode: 'async',
+          execute_id: result.data,
+          message: '工作流已提交，请使用 execute_id 查询结果',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // 🎯 同步模式：解析并提取实际的工作流输出
+      let workflowOutput = result;
+      
+      // 如果返回的 data 是字符串格式的 JSON，尝试解析
+      if (result.data && typeof result.data === 'string') {
+        try {
+          const parsed = JSON.parse(result.data);
+          workflowOutput = parsed;
+          console.log('✨ 成功解析data字段');
+        } catch (e) {
+          console.log('⚠️ 无法解析 data 字段，使用原始数据:', e.message);
+        }
+      }
+      
+      // 返回成功响应
       return res.status(200).json({
         success: true,
-        mode: 'async',
-        execute_id: result.data,
-        message: '工作流已提交，请使用 execute_id 查询结果',
+        mode: 'sync',
+        data: result,                    // 完整的原始响应
+        output: workflowOutput,          // 解析后的输出
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (fetchError) {
+      console.error('💥 API请求异常:', fetchError.message);
+      return res.status(500).json({
+        success: false,
+        error: '网络请求失败',
+        details: fetchError.message,
         timestamp: new Date().toISOString()
       });
     }
     
-    // 🎯 同步模式：解析并提取实际的工作流输出
-    let workflowOutput = result;
-    
-    // 如果返回的 data 是字符串格式的 JSON，尝试解析
-    if (result.data && typeof result.data === 'string') {
-      try {
-        const parsed = JSON.parse(result.data);
-        workflowOutput = parsed;
-        console.log('✨ 成功解析data字段');
-      } catch (e) {
-        console.log('⚠️  无法解析 data 字段，使用原始数据');
-      }
-    }
-    
-    // 返回成功响应
-    return res.status(200).json({
-      success: true,
-      mode: 'sync',
-      data: result,                    // 完整的原始响应
-      output: workflowOutput,          // 解析后的输出
-      timestamp: new Date().toISOString()
-    });
-    
   } catch (error) {
     // 捕获所有异常
     console.error('💥 执行出错:', error.message);
+    console.error('💥 错误类型:', error.name);
     console.error('💥 错误堆栈:', error.stack);
     
     return res.status(500).json({
       success: false,
       error: error.message,
+      errorType: error.name,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       timestamp: new Date().toISOString()
     });
