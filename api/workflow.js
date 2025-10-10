@@ -232,15 +232,25 @@ export default async function handler(req, res) {
           executeId = result.execute_id;
         }
         
+        // 🎯 扣子平台友好格式：返回扁平结构，方便下游节点直接引用
+        // 下游节点可以直接使用 {{output.execute_id}} 而不需要解析 body
         return res.status(200).json({
+          // 核心字段放在顶层，方便扣子平台直接引用
+          execute_id: executeId,
+          coze_token: COZE_TOKEN,  // 传递给下游节点
+          workflow_id: WORKFLOW_ID,
+          debug_url: result.debug_url || '',
+          
+          // 状态信息
           success: true,
           mode: 'async',
-          execute_id: executeId,
-          raw_response: result,  // 包含完整响应用于调试
           message: executeId 
             ? '工作流已提交，请使用 execute_id 查询结果' 
             : '工作流已提交，但未获取到 execute_id（请查看 raw_response）',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          
+          // 完整响应用于调试（可选）
+          raw_response: result
         });
       }
       
@@ -292,3 +302,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
