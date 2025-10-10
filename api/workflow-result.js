@@ -49,8 +49,24 @@ export default async function handler(req, res) {
         }
       }
       
-      executeId = requestBody.execute_id;
-      cozeToken = requestBody.coze_token || process.env.COZE_TOKEN;
+      // 🎯 智能解析：支持扣子平台的嵌套格式
+      // 格式1: 直接传入 { execute_id: "xxx", coze_token: "xxx" }
+      // 格式2: 扣子HTTP插件格式 { body: "{\"execute_id\":\"xxx\",...}" }
+      if (requestBody.body && typeof requestBody.body === 'string') {
+        try {
+          const parsedBody = JSON.parse(requestBody.body);
+          executeId = parsedBody.execute_id;
+          cozeToken = parsedBody.coze_token || process.env.COZE_TOKEN;
+          console.log('✨ 成功解析扣子平台嵌套格式');
+        } catch (e) {
+          console.log('⚠️ 无法解析body字段，尝试直接获取');
+          executeId = requestBody.execute_id;
+          cozeToken = requestBody.coze_token || process.env.COZE_TOKEN;
+        }
+      } else {
+        executeId = requestBody.execute_id;
+        cozeToken = requestBody.coze_token || process.env.COZE_TOKEN;
+      }
     } else {
       return res.status(405).json({
         success: false,
@@ -144,17 +160,29 @@ export default async function handler(req, res) {
       }
     }
 
-    // 返回结果
+    // 🎯 扣子平台友好格式：返回扁平结构
+    // 如果output是对象，将其字段展开到顶层，方便下游节点直接引用
+    let flattenedOutput = {};
+    if (output && typeof output === 'object' && !Array.isArray(output)) {
+      // 将output的所有字段提升到顶层
+      flattenedOutput = { ...output };
+    }
+
+    // 返回结果 - 扁平结构，方便扣子平台下游节点引用
     return res.status(200).json({
-      success: true,
+      // 核心状态字段
       execute_id: executeId,
       status: status,
       is_completed: isCompleted,
       is_failed: isFailed,
       is_running: isRunning,
-      output: output,
-      raw_response: result,
-      debug_url: result.debug_url,
+      
+      // 工作流输出字段（展开到顶层）
+      ...flattenedOutput,
+      
+      // 元信息
+      success: true,
+      debug_url: result.debug_url || '',
       message: isCompleted 
         ? '工作流执行完成' 
         : isFailed 
@@ -162,7 +190,11 @@ export default async function handler(req, res) {
           : isRunning 
             ? '工作流正在执行中，请稍后再查询' 
             : '工作流状态未知',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      
+      // 完整响应用于调试（可选）
+      raw_response: result,
+      raw_output: output  // 原始output，如果需要完整结构
     });
 
   } catch (error) {
@@ -179,3 +211,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
